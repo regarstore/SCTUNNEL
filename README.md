@@ -39,7 +39,7 @@ Skrip ini dirancang untuk mengubah server VPS Ubuntu 20.04 atau 22.04 baru menja
 3.  Jalankan perintah berikut untuk mengunduh dan memulai instalasi:
 
     ```bash
-    wget -O install.sh https://raw.githubusercontent.com/USERNAME/REPO/main/install.sh && chmod +x install.sh && ./install.sh
+    wget -O install.sh https://raw.githubusercontent.com/regarstore/SCTUNNEL/main/install.sh && chmod +x install.sh && ./install.sh
     ```
     > **Catatan**: Ganti `USERNAME/REPO` dengan lokasi repositori skrip ini yang sebenarnya.
 
@@ -78,3 +78,6 @@ Sistem kuota dan masa aktif berjalan secara otomatis di latar belakang. Anda tid
 | 3128, 8080  | TCP      | Squid Proxy & SSH-WS                  | Layanan proxy & WebSocket alternatif   |
 | 7100-7300   | UDP      | Badvpn UDPGW                          | Untuk panggilan suara atau video game  |
 | 8443        | TCP      | Stunnel                               | SSL Tunnel ke OpenVPN (1194)           |
+
+**Donasi Buat Beli Kopi Bro!**
+Link donasi https://dana.regarstore.biz.id
