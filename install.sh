@@ -3,7 +3,7 @@
 # =================================================================================
 # Script Name   : VPN Tunnel Premium Installer
 # Description   : Automates the setup of a complete VPN server.
-# Author        : Jules for Regar Store
+# Author        : Regar Store
 # OS            : Ubuntu 20.04 & 22.04
 # =================================================================================
 
@@ -980,7 +980,7 @@ main() {
 
     finalize_installation
 
-    info "Instalasi Selesai! Server akan di-reboot."
+    info "Instalasi Selesai!Pastikan Anda Sudah Berdonasi ke Dana-082274942599 ! Server akan di-reboot."
     # reboot
 }
 
