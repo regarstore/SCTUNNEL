@@ -1,4 +1,4 @@
-# Skrip Instalasi VPN Tunnel Premium untuk Regar Store
+# Skrip Instalasi VPN Tunnel Premium Regar Store
 
 Skrip ini dirancang untuk mengubah server VPS Ubuntu 20.04 atau 22.04 baru menjadi server VPN dan tunneling yang lengkap dan canggih. Proses instalasi sepenuhnya otomatis dan dilengkapi dengan sistem manajemen pengguna, kuota, dan masa aktif.
 
@@ -79,5 +79,6 @@ Sistem kuota dan masa aktif berjalan secara otomatis di latar belakang. Anda tid
 | 7100-7300   | UDP      | Badvpn UDPGW                          | Untuk panggilan suara atau video game  |
 | 8443        | TCP      | Stunnel                               | SSL Tunnel ke OpenVPN (1194)           |
 
+# DONASI
 **Donasi Buat Beli Kopi Bro!**
 Link donasi https://dana.regarstore.biz.id
