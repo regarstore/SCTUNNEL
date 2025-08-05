@@ -238,6 +238,20 @@ setup_xray() {
     info "Installing XRAY core..."
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --without-geodata >/dev/null 2>&1
 
+    # --- DNS Pre-flight Check ---
+    info "Performing DNS pre-flight check for $DOMAIN..."
+    if ! command -v dig &> /dev/null; then
+        apt-get install -y dnsutils >/dev/null 2>&1
+    fi
+
+    local_ip=$(curl -s ifconfig.me)
+    resolved_ip=$(dig +short "$DOMAIN" @8.8.8.8)
+
+    if [[ "$local_ip" != "$resolved_ip" ]]; then
+        error "DNS validation failed. Domain '$DOMAIN' points to '$resolved_ip', but this VPS IP is '$local_ip'. Please wait for DNS propagation or check your DNS records."
+    fi
+    info "DNS check passed. Domain points to this VPS."
+
     # --- Obtain SSL Certificate using Certbot ---
     info "Obtaining SSL certificate for $DOMAIN..."
     # Stop services on port 80 to allow certbot to bind
