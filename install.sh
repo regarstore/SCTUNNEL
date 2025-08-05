@@ -91,13 +91,16 @@ setup_ssh_tunneling() {
     echo "===================================" > /etc/ssh/banner
     echo "      REGAR STORE VPN TUNNEL" >> /etc/ssh/banner
     echo "===================================" >> /etc/ssh/banner
-    # Check if Banner line exists and uncomment/add it
-    if grep -q "#Banner" /etc/ssh/sshd_config; then
-        sed -i 's/#Banner none/Banner \/etc\/ssh\/banner/g' /etc/ssh/sshd_config
-    else
-        echo "Banner /etc/ssh/banner" >> /etc/ssh/sshd_config
-    fi
+    # Robustly set the banner by commenting out any existing Banner line and adding a new one.
+    sed -i -e 's/^[ \t]*Banner/#&/g' /etc/ssh/sshd_config
+    echo "Banner /etc/ssh/banner" >> /etc/ssh/sshd_config
+
     systemctl restart sshd
+
+    # Verify that the sshd service is active after restart
+    if ! systemctl is-active --quiet sshd; then
+        error "sshd service failed to restart. Please check /etc/ssh/sshd_config for errors."
+    fi
 
     # --- Configure Dropbear ---
     info "Configuring Dropbear on ports 109 & 143..."
