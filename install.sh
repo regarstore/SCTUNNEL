@@ -363,30 +363,11 @@ setup_xray() {
 }
 EOF
 
-    # --- Fix XRAY Permissions ---
-    info "Setting up user and permissions for XRAY service..."
-    groupadd --system xray >/dev/null 2>&1 || true
-    useradd --system -g xray -d /usr/local/etc/xray -s /bin/false xray >/dev/null 2>&1 || true
-
-    info "Changing ownership of XRAY directories..."
-    chown -R xray:xray /usr/local/etc/xray
-    chown -R xray:xray /var/log/xray
-    if [ "$(stat -c '%U' /usr/local/etc/xray)" != "xray" ]; then
-        error "Failed to change ownership of /usr/local/etc/xray."
-    fi
-
-    info "Setting up service user via systemd drop-in..."
-    mkdir -p /etc/systemd/system/xray.service.d
-    cat > /etc/systemd/system/xray.service.d/override.conf <<EOF
-[Service]
-User=xray
-Group=xray
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-EOF
-
-    info "Applying special permissions for SSL certs..."
-    setfacl -R -m u:xray:r-x /etc/letsencrypt/live/
-    setfacl -R -m u:xray:r-x /etc/letsencrypt/archive/
+    # --- Final Permissions Fix ---
+    info "Applying final permissions fix for XRAY..."
+    chmod 644 /usr/local/etc/xray/config.json
+    setfacl -R -m u:nobody:r-x /etc/letsencrypt/live/
+    setfacl -R -m u:nobody:r-x /etc/letsencrypt/archive/
 
     systemctl daemon-reload
 
