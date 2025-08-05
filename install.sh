@@ -184,43 +184,41 @@ EOF
 setup_openvpn() {
     info "Setting up OpenVPN server..."
 
-    # --- Install Easy-RSA if not present ---
+    if ! command -v openvpn &> /dev/null; then
+        apt-get install -y openvpn >/dev/null 2>&1
+    fi
     if ! command -v easyrsa &> /dev/null; then
-        apt-get install -y openvpn easy-rsa
+        apt-get install -y easy-rsa >/dev/null 2>&1
     fi
 
-    # --- Set up Easy-RSA directory ---
-    info "Configuring Easy-RSA..."
+    info "Configuring Easy-RSA and generating certificates..."
     mkdir -p /etc/openvpn/easy-rsa
     cp -r /usr/share/easy-rsa/* /etc/openvpn/easy-rsa/
     cd /etc/openvpn/easy-rsa
 
-    # --- Initialize PKI and Build CA ---
-    info "Initializing PKI and building Certificate Authority..."
     ./easyrsa --batch init-pki >/dev/null 2>&1
     ./easyrsa --batch build-ca nopass >/dev/null 2>&1
-
-    # --- Generate Server Cert and Key ---
-    info "Generating OpenVPN server certificate and key..."
     ./easyrsa --batch build-server-full server nopass >/dev/null 2>&1
-
-    # --- Generate Diffie-Hellman parameters ---
-    info "Generating Diffie-Hellman parameters..."
     ./easyrsa --batch gen-dh >/dev/null 2>&1
 
-    # --- Create OpenVPN Server Configs (UDP & TCP) ---
-    info "Creating OpenVPN server configurations for UDP (2200) and TCP (1194)..."
+    info "Copying OpenVPN server files..."
+    mkdir -p /etc/openvpn/server
+    cp pki/ca.crt /etc/openvpn/server/
+    cp pki/issued/server.crt /etc/openvpn/server/
+    cp pki/private/server.key /etc/openvpn/server/
+    cp pki/dh.pem /etc/openvpn/server/
+
+    info "Creating OpenVPN server configurations..."
     IP_ADDRESS=$(curl -s ifconfig.me)
 
-    # UDP Config
     cat > /etc/openvpn/server_udp.conf << EOF
 port 2200
 proto udp
 dev tun
-ca /etc/openvpn/easy-rsa/pki/ca.crt
-cert /etc/openvpn/easy-rsa/pki/issued/server.crt
-key /etc/openvpn/easy-rsa/pki/private/server.key
-dh /etc/openvpn/easy-rsa/pki/dh.pem
+ca /etc/openvpn/server/ca.crt
+cert /etc/openvpn/server/server.crt
+key /etc/openvpn/server/server.key
+dh /etc/openvpn/server/dh.pem
 server 10.8.0.0 255.255.255.0
 ifconfig-pool-persist ipp.txt
 push "redirect-gateway def1 bypass-dhcp"
@@ -233,20 +231,18 @@ group nogroup
 persist-key
 persist-tun
 status /var/log/openvpn/openvpn-status.log
-log-append /var/log/openvpn/openvpn.log
 verb 3
 explicit-exit-notify 1
 EOF
 
-    # TCP Config
     cat > /etc/openvpn/server_tcp.conf << EOF
 port 1194
 proto tcp
 dev tun
-ca /etc/openvpn/easy-rsa/pki/ca.crt
-cert /etc/openvpn/easy-rsa/pki/issued/server.crt
-key /etc/openvpn/easy-rsa/pki/private/server.key
-dh /etc/openvpn/easy-rsa/pki/dh.pem
+ca /etc/openvpn/server/ca.crt
+cert /etc/openvpn/server/server.crt
+key /etc/openvpn/server/server.key
+dh /etc/openvpn/server/dh.pem
 server 10.9.0.0 255.255.255.0
 ifconfig-pool-persist ipp_tcp.txt
 push "redirect-gateway def1 bypass-dhcp"
@@ -259,36 +255,36 @@ group nogroup
 persist-key
 persist-tun
 status /var/log/openvpn/openvpn-status-tcp.log
-log-append /var/log/openvpn/openvpn-tcp.log
 verb 3
 explicit-exit-notify 1
 EOF
 
     mkdir -p /var/log/openvpn
 
-    # --- Enable IP Forwarding ---
     info "Enabling IP forwarding..."
     sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
     sysctl -p >/dev/null 2>&1
 
-    # --- Configure Firewall for NAT ---
     info "Configuring Firewall for OpenVPN NAT..."
     INTERFACE=$(ip -o -4 route show to default | awk '{print $5}')
     UFW_BEFORE_RULES="/etc/ufw/before.rules"
-    if ! grep -q "POSTROUTING" "$UFW_BEFORE_RULES"; then
+    if ! grep -q "POSTROUTING.*10.8.0.0" "$UFW_BEFORE_RULES"; then
         sed -i "1s;^;*nat\n:POSTROUTING ACCEPT [0:0]\n-A POSTROUTING -s 10.8.0.0/24 -o $INTERFACE -j MASQUERADE\n-A POSTROUTING -s 10.9.0.0/24 -o $INTERFACE -j MASQUERADE\nCOMMIT\n;" "$UFW_BEFORE_RULES"
-    else
-        sed -i "/# END UFW FORWARD RULES/i -A POSTROUTING -s 10.8.0.0/24 -o $INTERFACE -j MASQUERADE\n-A POSTROUTING -s 10.9.0.0/24 -o $INTERFACE -j MASQUERADE" "$UFW_BEFORE_RULES"
     fi
 
-    # --- Start and Enable OpenVPN services ---
     info "Starting and enabling OpenVPN services..."
-    systemctl enable openvpn-server@server_udp >/dev/null 2>&1
-    systemctl start openvpn-server@server_udp
-    systemctl enable openvpn-server@server_tcp >/dev/null 2>&1
-    systemctl start openvpn-server@server_tcp
+    systemctl enable openvpn-server@server_udp.service >/dev/null 2>&1
+    systemctl start openvpn-server@server_udp.service
+    systemctl enable openvpn-server@server_tcp.service >/dev/null 2>&1
+    systemctl start openvpn-server@server_tcp.service
 
-    # --- Create Client Config Template ---
+    if ! systemctl is-active --quiet openvpn-server@server_udp.service; then
+        error "OpenVPN UDP service failed to start. Check logs with 'journalctl -u openvpn-server@server_udp.service'."
+    fi
+    if ! systemctl is-active --quiet openvpn-server@server_tcp.service; then
+        warn "OpenVPN TCP service failed to start. Check logs with 'journalctl -u openvpn-server@server_tcp.service'."
+    fi
+
     info "Creating client configuration template..."
     cat > /etc/openvpn/client-template.ovpn << EOF
 client
