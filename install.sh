@@ -375,9 +375,14 @@ EOF
         error "Failed to change ownership of /usr/local/etc/xray."
     fi
 
-    info "Setting up service user..."
-    sed -i 's/User=nobody/User=xray/' /etc/systemd/system/xray.service
-    sed -i 's/Group=nobody/Group=xray/' /etc/systemd/system/xray.service
+    info "Setting up service user via systemd drop-in..."
+    mkdir -p /etc/systemd/system/xray.service.d
+    cat > /etc/systemd/system/xray.service.d/override.conf <<EOF
+[Service]
+User=xray
+Group=xray
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+EOF
 
     info "Applying special permissions for SSL certs..."
     setfacl -R -m u:xray:r-x /etc/letsencrypt/live/
