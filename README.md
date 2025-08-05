@@ -39,7 +39,7 @@ Skrip ini dirancang untuk mengubah server VPS Ubuntu 20.04 atau 22.04 baru menja
 3.  Jalankan perintah berikut untuk mengunduh dan memulai instalasi:
 
     ```bash
-    wget -O install.sh https://raw.githubusercontent.com/regarstore/SCTUNNEL/refs/heads/feat/advanced-vpn-management/install.sh && chmod +x install.sh && ./install.sh
+    wget -O install.sh [URL_RAW_FILE_INSTALL.SH_ANDA] && chmod +x install.sh && ./install.sh
     ```
     > **PENTING**: Ganti `[URL_RAW_FILE_INSTALL.SH_ANDA]` dengan URL *raw* dari file `install.sh` di repositori GitHub Anda.
     >

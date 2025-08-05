@@ -184,12 +184,17 @@ EOF
 setup_openvpn() {
     info "Setting up OpenVPN server using a robust, industry-standard installer..."
 
-    # Download the well-tested openvpn-install.sh script
+    # Download the well-tested openvpn-install.sh script and move it to /root
+    # so the user can easily run it again to manage users.
     curl -O https://raw.githubusercontent.com/Nyr/openvpn-install/master/openvpn-install.sh
     chmod +x openvpn-install.sh
+    mv openvpn-install.sh /root/
 
-    # --- Install OpenVPN via the script for UDP on port 2200 ---
-    info "Installing OpenVPN for UDP on port 2200..."
+    # --- Run the installer script, showing all output to the user ---
+    info "Running the OpenVPN installer. If it fails, the error will be shown below."
+    warn "This installer will create one OpenVPN instance (UDP on Port 2200)."
+
+    # Run the script non-interactively. Crucially, we do NOT redirect stdout/stderr.
     AUTO_INSTALL=y \
     APPROVE_INSTALL=y \
     APPROVE_IP=y \
@@ -197,74 +202,33 @@ setup_openvpn() {
     PORT=2200 \
     PROTOCOL_CHOICE=1 \
     DNS=1 \
-    COMPRESSION_ENABLED=n \
-    CUSTOMIZE_ENC=n \
-    CLIENT=client-udp \
+    CLIENT=initial-client \
     PASS=1 \
-    ./openvpn-install.sh > /var/log/openvpn-udp-install.log 2>&1
+    /root/openvpn-install.sh
 
-    # --- Install OpenVPN via the script for TCP on port 1194 ---
-    info "Installing OpenVPN for TCP on port 1194..."
-    # We need to remove the first installation to run it again for TCP
-    # This is a limitation of the script, so we will manage it carefully.
-    # The script is not designed for multiple protocols, so we will manually create the second service.
-
-    info "Adapting configuration for TCP on port 1194..."
-    if [ -f /etc/openvpn/server/server.conf ]; then
-        # Rename the UDP config to be specific
-        mv /etc/openvpn/server/server.conf /etc/openvpn/server/server_udp.conf
-
-        # Create the TCP config based on the UDP one
-        cp /etc/openvpn/server/server_udp.conf /etc/openvpn/server/server_tcp.conf
-        sed -i 's/proto udp/proto tcp/' /etc/openvpn/server/server_tcp.conf
-        sed -i 's/port 2200/port 1194/' /etc/openvpn/server/server_tcp.conf
-
-        # Adjust server subnet to avoid conflict
-        sed -i 's/server 10.8.0.0/server 10.9.0.0/' /etc/openvpn/server/server_tcp.conf
-
-        # Restart the main service with the specific UDP config
-        systemctl restart openvpn-server@server_udp.service
-
-        # Enable and start the new TCP service
-        systemctl enable openvpn-server@server_tcp.service
-        systemctl start openvpn-server@server_tcp.service
-
-        info "Verifying OpenVPN services..."
-        if ! systemctl is-active --quiet openvpn-server@server_udp.service; then
-            error "OpenVPN UDP service failed to start. Check logs with 'journalctl -u openvpn-server@server_udp.service'."
-        fi
-        if ! systemctl is-active --quiet openvpn-server@server_tcp.service; then
-            warn "OpenVPN TCP service failed to start. Check logs with 'journalctl -u openvpn-server@server_tcp.service'."
-        fi
-    else
-        error "OpenVPN base installation failed. Could not find server.conf."
+    # --- Verification ---
+    info "Verifying OpenVPN installation..."
+    if [ ! -f /etc/openvpn/server/server.conf ]; then
+        error "OpenVPN installation FAILED. The installer script did not create /etc/openvpn/server/server.conf. Please review the output above for the specific error."
+    fi
+    if ! systemctl is-active --quiet openvpn-server@server.service; then
+        error "OpenVPN service 'openvpn-server@server.service' is not running. Please check the logs."
     fi
 
-    # Create a generic client template for the menu script
-    info "Creating client configuration template..."
-    IP_ADDRESS=$(curl -s ifconfig.me)
-    cat > /etc/openvpn/client-template.ovpn << EOF
-client
-dev tun
-proto # PROTOCOL_PLACEHOLDER
-remote $IP_ADDRESS # PORT_PLACEHOLDER
-resolv-retry infinite
-nobind
-persist-key
-persist-tun
-remote-cert-tls server
-cipher AES-256-GCM
-auth SHA256
-verb 3
-EOF
+    # --- Adapt Menu ---
+    # The Nyr script handles user management. We will adjust our menu to reflect this.
+    info "Adapting management menu for OpenVPN..."
+    sed -i '/add_ssh_user/d' /usr/local/bin/menu
+    sed -i '/delete_ssh_user/d' /usr/local/bin/menu
+    sed -i '/Add SSH\/OpenVPN User/d' /usr/local/bin/menu
+    sed -i '/Delete SSH\/OpenVPN User/d' /usr/local/bin/menu
+    # Add a new option to the menu to call the Nyr script
+    sed -i '/List XRAY Users/ a \ 4. Manage OpenVPN Users (run installer)' /usr/local/bin/menu
+    # Add the case for the new option
+    sed -i '/list_xray_users/ a \        4) /root/openvpn-install.sh; press_enter_to_continue ;;' /usr/local/bin/menu
 
-    # The Nyr script handles user management, so we adapt our menu
-    # For simplicity in this fix, we will rely on the user management provided by Nyr's script
-    # by running `./openvpn-install.sh` again from the command line.
-    # We will adjust our menu script to simply call the Nyr script.
-    sed -i '/add_ssh_user/ a \    echo "Untuk manajemen user OpenVPN, jalankan /root/openvpn-install.sh"' /usr/local/bin/menu
-
-    info "OpenVPN setup completed."
+    info "OpenVPN setup completed successfully."
+    info "To add/remove OpenVPN users, run 'menu' and select the OpenVPN option, or run '/root/openvpn-install.sh' directly."
 }
 
 setup_xray() {
