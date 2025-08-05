@@ -568,10 +568,10 @@ show_menu() {
     echo "----------------------------------------"
 }
 
-# --- XRAY User Management ---
+# --- XRAY User Management (jq method) ---
 add_xray_user() {
     echo "--- Add XRAY User ---"
-    read -p "Enter username (email format, e.g., user@regar.store): " email
+    read -p "Enter username (email format): " email
     read -p "Select Protocol [1=VLESS, 2=VMess, 3=Trojan]: " proto_choice
     read -p "Enter Quota (GB, 0 for unlimited): " quota_gb
     read -p "Enter IP Limit (0 for unlimited): " ip_limit
@@ -579,31 +579,28 @@ add_xray_user() {
 
     exp_date=$(date -d "+$days days" +"%Y-%m-%d")
 
-    local protocol_name inbound_tag creds_id creds_pass settings
+    local protocol_name inbound_tag new_client creds_for_db
 
     case $proto_choice in
-        1) protocol_name="vless"; inbound_tag="vless-in"; creds_id=$($XRAY_BIN uuid) ;;
-        2) protocol_name="vmess"; inbound_tag="vmess-in"; creds_id=$($XRAY_BIN uuid) ;;
-        3) protocol_name="trojan"; inbound_tag="trojan-in"; creds_pass=$(openssl rand -base64 12) ;;
+        1) protocol_name="vless"; inbound_tag="vless-in"; creds_for_db=$($XRAY_BIN uuid); new_client=$(jq -n --arg id "$creds_for_db" --arg email "$email" '{id: $id, email: $email, level: 0}') ;;
+        2) protocol_name="vmess"; inbound_tag="vmess-in"; creds_for_db=$($XRAY_BIN uuid); new_client=$(jq -n --arg id "$creds_for_db" --arg email "$email" '{id: $id, email: $email, level: 0}') ;;
+        3) protocol_name="trojan"; inbound_tag="trojan-in"; creds_for_db=$(openssl rand -base64 12); new_client=$(jq -n --arg pass "$creds_for_db" --arg email "$email" '{password: $pass, email: $email, level: 0}') ;;
         *) echo -e "${RED}Invalid protocol choice.${NC}"; return ;;
     esac
 
-    if [[ -n "$creds_pass" ]]; then
-        settings="{\"clients\": [{\"password\": \"$creds_pass\", \"email\": \"$email\", \"level\": 0}]}"
-        creds_for_db=$creds_pass
-    else
-        settings="{\"clients\": [{\"id\": \"$creds_id\", \"email\": \"$email\", \"level\": 0}]}"
-        creds_for_db=$creds_id
-    fi
+    # Modify the config file
+    config_file="/usr/local/etc/xray/config.json"
+    temp_config=$(mktemp)
 
-    result=$($XRAY_BIN api inbound add --server=$XRAY_API_ADDR --tag=$inbound_tag --protocol=$protocol_name --settings="$settings")
+    jq "(.inbounds[] | select(.tag == \"$inbound_tag\").settings.clients) += [$new_client]" "$config_file" > "$temp_config" && mv "$temp_config" "$config_file"
 
     if [[ $? -eq 0 ]]; then
         echo "$email;$protocol_name;$creds_for_db;$quota_gb;$ip_limit;$exp_date" >> "$USER_DB"
-        echo -e "${GREEN}User '$email' for $protocol_name added successfully.${NC}"
+        echo -e "${GREEN}User '$email' for $protocol_name added. Restarting XRAY...${NC}"
+        systemctl restart xray
         echo "UUID/Password: $creds_for_db"
     else
-        echo -e "${RED}Failed to add user to XRAY service. Error: $result${NC}"
+        echo -e "${RED}Failed to modify xray config file.${NC}"
     fi
 }
 
@@ -613,14 +610,21 @@ delete_xray_user() {
     if [[ -z "$user_line" ]]; then
         echo -e "${RED}User '$email' not found in database.${NC}"; return
     fi
+
     protocol_name=$(echo "$user_line" | cut -d';' -f2)
     inbound_tag="${protocol_name}-in"
-    result=$($XRAY_BIN api inbound remove --server=$XRAY_API_ADDR --tag="$inbound_tag" --email="$email")
+    config_file="/usr/local/etc/xray/config.json"
+    temp_config=$(mktemp)
+
+    # Modify the config file
+    jq "del(.inbounds[] | select(.tag == \"$inbound_tag\").settings.clients[] | select(.email == \"$email\"))" "$config_file" > "$temp_config" && mv "$temp_config" "$config_file"
+
     if [[ $? -eq 0 ]]; then
         sed -i "/^$email;/d" "$USER_DB"
-        echo -e "${GREEN}User '$email' removed from $protocol_name.${NC}"
+        echo -e "${GREEN}User '$email' removed. Restarting XRAY...${NC}"
+        systemctl restart xray
     else
-        echo -e "${RED}Failed to remove user from XRAY service. Error: $result${NC}"
+        echo -e "${RED}Failed to modify xray config file.${NC}"
     fi
 }
 
