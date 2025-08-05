@@ -363,10 +363,28 @@ setup_xray() {
 }
 EOF
 
+    # --- Fix XRAY Permissions ---
+    info "Setting up user and permissions for XRAY service..."
+    groupadd --system xray >/dev/null 2>&1 || true
+    useradd --system -g xray -d /usr/local/etc/xray -s /bin/false xray >/dev/null 2>&1 || true
+    chown -R xray:xray /usr/local/etc/xray
+    chown -R xray:xray /var/log/xray
+    usermod -aG adm xray
+
+    # Modify XRAY service to run as 'xray' user
+    sed -i 's/User=nobody/User=xray/' /etc/systemd/system/xray.service
+    sed -i 's/Group=nobody/Group=xray/' /etc/systemd/system/xray.service
+    systemctl daemon-reload
+
     # --- Restart XRAY ---
-    info "Restarting XRAY service..."
+    info "Restarting XRAY service with correct permissions..."
     systemctl enable xray >/dev/null 2>&1
     systemctl restart xray
+
+    # --- Verify XRAY Service ---
+    if ! systemctl is-active --quiet xray; then
+        error "XRAY service failed to start even after permission fix. Please check 'journalctl -u xray'."
+    fi
 
     # --- Update Stunnel to not use port 443 ---
     info "Updating Stunnel to free up port 443 for XRAY..."
@@ -561,12 +579,13 @@ show_menu() {
     echo " 1. Add XRAY User (VLESS/VMess/Trojan)"
     echo " 2. Delete XRAY User"
     echo " 3. List XRAY Users"
-    echo " 4. Manage OpenVPN Users (run installer)"
-    echo " 5. Manage SSH Users"
-    echo " 6. Check Service Status"
-    echo " 7. Renew SSL Certificate"
-    echo " 8. Reboot Server"
-    echo " 9. Exit"
+    echo " 4. Show XRAY Share Links"
+    echo " 5. Manage OpenVPN Users (run installer)"
+    echo " 6. Manage SSH Users"
+    echo " 7. Check Service Status"
+    echo " 8. Renew SSL Certificate"
+    echo " 9. Reboot Server"
+    echo " 10. Exit"
     echo "----------------------------------------"
 }
 
@@ -641,6 +660,32 @@ list_xray_users() {
     echo "-----------------------------------------------------------------------------"
 }
 
+show_xray_share_links() {
+    DOMAIN=$(cat /root/domain.txt)
+    echo "--- XRAY Shareable Links ---"
+    while IFS=';' read -r email protocol creds quota_gb ip_limit exp_date; do
+        if [[ "$email" == \#* || -z "$email" ]]; then continue; fi
+
+        echo -e "\n${YELLOW}User: ${email}${NC}"
+        case $protocol in
+            vless)
+                link="vless://${creds}@${DOMAIN}:443?type=ws&path=%2Fvless&security=tls#${email}"
+                echo -e "${GREEN}$link${NC}"
+                ;;
+            vmess)
+                json="{\"v\":\"2\",\"ps\":\"${email}\",\"add\":\"${DOMAIN}\",\"port\":\"443\",\"id\":\"${creds}\",\"aid\":0,\"net\":\"ws\",\"type\":\"none\",\"host\":\"${DOMAIN}\",\"path\":\"/vmess\",\"tls\":\"tls\"}"
+                link="vmess://$(echo -n $json | base64 -w 0)"
+                echo -e "${GREEN}$link${NC}"
+                ;;
+            trojan)
+                link="trojan://${creds}@${DOMAIN}:443?type=ws&path=%2Ftrojan&security=tls#${email}"
+                echo -e "${GREEN}$link${NC}"
+                ;;
+        esac
+    done < "$USER_DB"
+    echo "----------------------------"
+}
+
 # --- Other User Management ---
 manage_ssh_users() {
     echo "Simple SSH User Management"
@@ -693,17 +738,18 @@ renew_ssl() {
 # --- Main Loop ---
 while true; do
     show_menu
-    read -p "Enter your choice [1-9]: " choice
+    read -p "Enter your choice [1-10]: " choice
     case $choice in
         1) add_xray_user; press_enter_to_continue ;;
         2) delete_xray_user; press_enter_to_continue ;;
         3) list_xray_users; press_enter_to_continue ;;
-        4) $OPENVPN_INSTALLER; press_enter_to_continue ;;
-        5) manage_ssh_users; press_enter_to_continue ;;
-        6) check_services; press_enter_to_continue ;;
-        7) renew_ssl; press_enter_to_continue ;;
-        8) reboot ;;
-        9) exit 0 ;;
+        4) show_xray_share_links; press_enter_to_continue ;;
+        5) $OPENVPN_INSTALLER; press_enter_to_continue ;;
+        6) manage_ssh_users; press_enter_to_continue ;;
+        7) check_services; press_enter_to_continue ;;
+        8) renew_ssl; press_enter_to_continue ;;
+        9) reboot ;;
+        10) exit 0 ;;
         *) echo -e "${RED}Invalid option. Please try again.${NC}"; sleep 1 ;;
     esac
 done
@@ -801,15 +847,52 @@ EOF
 finalize_installation() {
     info "Finalizing installation..."
 
-    # --- Add Branding ---
-    info "Adding Regar Store branding to login banner..."
-    echo "========================================" > /etc/motd
-    echo "" >> /etc/motd
-    echo "   Welcome to REGAR STORE VPN Server    " >> /etc/motd
-    echo "" >> /etc/motd
-    echo "   Type 'menu' to manage users/services " >> /etc/motd
-    echo "" >> /etc/motd
-    echo "========================================" >> /etc/motd
+    # --- Add Dynamic MOTD ---
+    info "Setting up dynamic MOTD..."
+    cat > /usr/local/bin/motd_generator << 'EOF'
+#!/bin/bash
+# MOTD Generator for Regar Store VPN
+
+# --- Colors ---
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# --- Fetch Data ---
+os_info=$(lsb_release -ds)
+ram_info=$(free -h | awk '/^Mem:/ {print $2}')
+cpu_info=$(lscpu | awk -F: '/^Model name/ {print $2}' | sed 's/^[ \t]*//')
+ip_info=$(curl -s ipinfo.io)
+city=$(echo "$ip_info" | jq -r .city)
+isp=$(echo "$ip_info" | jq -r .org)
+ip_vps=$(echo "$ip_info" | jq -r .ip)
+domain=$(cat /root/domain.txt)
+current_time=$(date +"%Y-%m-%d %H:%M:%S")
+version="1.1 (Advanced)"
+
+# --- Display Banner ---
+echo -e "=========================================================================="
+echo -e "         Welcome to ${YELLOW}Regar Store VPN Server${NC}"
+echo -e "=========================================================================="
+echo -e "  • ${CYAN}OS${NC}          : $os_info"
+echo -e "  • ${CYAN}CPU${NC}         : $cpu_info"
+echo -e "  • ${CYAN}RAM${NC}         : $ram_info"
+echo -e "  • ${CYAN}ISP${NC}         : $isp"
+echo -e "  • ${CYAN}CITY${NC}        : $city"
+echo -e "  • ${CYAN}IP VPS${NC}      : $ip_vps"
+echo -e "  • ${CYAN}DOMAIN${NC}      : $domain"
+echo -e "  • ${CYAN}DATE & TIME${NC} : $current_time"
+echo -e "  • ${CYAN}VERSI AUTOSC${NC} : $version"
+echo -e "=========================================================================="
+echo -e "  Type ${YELLOW}'menu'${NC} to manage users and services."
+echo -e "=========================================================================="
+EOF
+    chmod +x /usr/local/bin/motd_generator
+
+    # Create profile script to run motd generator on login
+    echo "/usr/local/bin/motd_generator" > /etc/profile.d/99-regarstore-motd.sh
 
     # --- Setup SSL Auto-Renewal ---
     info "Setting up automatic SSL renewal..."
