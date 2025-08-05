@@ -889,12 +889,12 @@ main() {
     ask_domain
 
     install_dependencies
+    setup_management_menu
     setup_ssh_tunneling
     setup_openvpn
     setup_xray
     setup_support_services
     setup_security
-    setup_management_menu
 
     finalize_installation
 
