@@ -222,9 +222,9 @@ setup_openvpn() {
     sed -i '/Add SSH\/OpenVPN User/d' /usr/local/bin/menu
     sed -i '/Delete SSH\/OpenVPN User/d' /usr/local/bin/menu
     # Add a new option to the menu to call the Nyr script
-    sed -i '/List XRAY Users/ a \ 4. Manage OpenVPN Users (run installer)' /usr/local/bin/menu
+    sed -i '/echo " 3. List XRAY Users"/a \    echo " 4. Manage OpenVPN Users (via installer script)"' /usr/local/bin/menu
     # Add the case for the new option
-    sed -i '/list_xray_users/ a \        4) /root/openvpn-install.sh; press_enter_to_continue ;;' /usr/local/bin/menu
+    sed -i '/list_xray_users/a \        4) \/root\/openvpn-install.sh; press_enter_to_continue ;;' /usr/local/bin/menu
 
     info "OpenVPN setup completed successfully."
     info "To add/remove OpenVPN users, run 'menu' and select the OpenVPN option, or run '/root/openvpn-install.sh' directly."
