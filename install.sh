@@ -184,11 +184,10 @@ EOF
 setup_openvpn() {
     info "Setting up OpenVPN server using a robust, industry-standard installer..."
 
-    # Download the well-tested openvpn-install.sh script and move it to /root
+    # Download the well-tested openvpn-install.sh script directly to /root
     # so the user can easily run it again to manage users.
-    curl -O https://raw.githubusercontent.com/Nyr/openvpn-install/master/openvpn-install.sh
-    chmod +x openvpn-install.sh
-    mv openvpn-install.sh /root/
+    curl -o /root/openvpn-install.sh https://raw.githubusercontent.com/Nyr/openvpn-install/master/openvpn-install.sh
+    chmod +x /root/openvpn-install.sh
 
     # --- Run the installer script, showing all output to the user ---
     info "Running the OpenVPN installer. If it fails, the error will be shown below."
