@@ -1,9 +1,10 @@
 #!/bin/bash
+set -e
 
 # =================================================================================
 # Script Name   : VPN Tunnel Premium Installer
 # Description   : Automates the setup of a complete VPN server.
-# Author        : Regar Store
+# Author        : Jules for Regar Store
 # OS            : Ubuntu 20.04 & 22.04
 # =================================================================================
 
@@ -494,7 +495,12 @@ setup_support_services() {
 
     # --- Compile and Install Badvpn UDP Gateway ---
     info "Compiling and installing Badvpn UDP Gateway..."
+    if ! command -v git &> /dev/null; then
+        info "Installing git..."
+        apt-get install -y git >/dev/null 2>&1
+    fi
     if ! command -v cmake &> /dev/null; then
+        info "Installing cmake..."
         apt-get install -y cmake >/dev/null 2>&1
     fi
     cd /root
@@ -980,7 +986,7 @@ main() {
 
     finalize_installation
 
-    info "Instalasi Selesai!Pastikan Anda Sudah Berdonasi ke Dana-082274942599 ! Server akan di-reboot."
+    info "Instalasi Selesai! Server akan di-reboot."
     # reboot
 }
 

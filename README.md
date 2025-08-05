@@ -1,4 +1,4 @@
-# Skrip Instalasi VPN Tunnel Premium Regar Store
+# Skrip Instalasi VPN Tunnel Premium untuk Regar Store
 
 Skrip ini dirancang untuk mengubah server VPS Ubuntu 20.04 atau 22.04 baru menjadi server VPN dan tunneling yang lengkap dan canggih. Proses instalasi sepenuhnya otomatis dan dilengkapi dengan sistem manajemen pengguna, kuota, dan masa aktif.
 
@@ -39,9 +39,11 @@ Skrip ini dirancang untuk mengubah server VPS Ubuntu 20.04 atau 22.04 baru menja
 3.  Jalankan perintah berikut untuk mengunduh dan memulai instalasi:
 
     ```bash
-    wget -O install.sh https://raw.githubusercontent.com/regarstore/SCTUNNEL/main/install.sh && chmod +x install.sh && ./install.sh
+    wget -O install.sh [URL_RAW_FILE_INSTALL.SH_ANDA] && chmod +x install.sh && ./install.sh
     ```
-    > **Catatan**: Ganti `USERNAME/REPO` dengan lokasi repositori skrip ini yang sebenarnya.
+    > **PENTING**: Ganti `[URL_RAW_FILE_INSTALL.SH_ANDA]` dengan URL *raw* dari file `install.sh` di repositori GitHub Anda.
+    >
+    > **Contoh**: `https://raw.githubusercontent.com/nama-anda/repo-anda/main/install.sh`
 
 4.  Skrip akan meminta Anda memasukkan nama domain. Pastikan domain sudah benar dan sudah diarahkan ke IP VPS.
 5.  Tunggu proses instalasi selesai (sekitar 15-30 menit).
@@ -78,7 +80,3 @@ Sistem kuota dan masa aktif berjalan secara otomatis di latar belakang. Anda tid
 | 3128, 8080  | TCP      | Squid Proxy & SSH-WS                  | Layanan proxy & WebSocket alternatif   |
 | 7100-7300   | UDP      | Badvpn UDPGW                          | Untuk panggilan suara atau video game  |
 | 8443        | TCP      | Stunnel                               | SSL Tunnel ke OpenVPN (1194)           |
-
-# DONASI
-**Donasi Buat Beli Kopi Bro!**
-Link donasi https://dana.regarstore.biz.id
