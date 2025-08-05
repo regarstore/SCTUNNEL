@@ -182,108 +182,67 @@ EOF
 }
 
 setup_openvpn() {
-    info "Setting up OpenVPN server..."
+    info "Setting up OpenVPN server using a robust, industry-standard installer..."
 
-    if ! command -v openvpn &> /dev/null; then apt-get install -y openvpn >/dev/null 2>&1; fi
-    if ! command -v easyrsa &> /dev/null; then apt-get install -y easy-rsa >/dev/null 2>&1; fi
+    # Download the well-tested openvpn-install.sh script
+    curl -O https://raw.githubusercontent.com/Nyr/openvpn-install/master/openvpn-install.sh
+    chmod +x openvpn-install.sh
 
-    info "Configuring Easy-RSA and generating certificates..."
-    mkdir -p /etc/openvpn/easy-rsa
-    cp -r /usr/share/easy-rsa/* /etc/openvpn/easy-rsa/
-    cd /etc/openvpn/easy-rsa
+    # --- Install OpenVPN via the script for UDP on port 2200 ---
+    info "Installing OpenVPN for UDP on port 2200..."
+    AUTO_INSTALL=y \
+    APPROVE_INSTALL=y \
+    APPROVE_IP=y \
+    PORT_CHOICE=2 \
+    PORT=2200 \
+    PROTOCOL_CHOICE=1 \
+    DNS=1 \
+    COMPRESSION_ENABLED=n \
+    CUSTOMIZE_ENC=n \
+    CLIENT=client-udp \
+    PASS=1 \
+    ./openvpn-install.sh > /var/log/openvpn-udp-install.log 2>&1
 
-    ./easyrsa --batch init-pki >/dev/null 2>&1
-    ./easyrsa --batch build-ca nopass >/dev/null 2>&1
-    ./easyrsa --batch build-server-full server nopass >/dev/null 2>&1
-    ./easyrsa --batch gen-dh >/dev/null 2>&1
+    # --- Install OpenVPN via the script for TCP on port 1194 ---
+    info "Installing OpenVPN for TCP on port 1194..."
+    # We need to remove the first installation to run it again for TCP
+    # This is a limitation of the script, so we will manage it carefully.
+    # The script is not designed for multiple protocols, so we will manually create the second service.
 
-    info "Copying OpenVPN server files to /etc/openvpn/server..."
-    mkdir -p /etc/openvpn/server
-    cp pki/ca.crt /etc/openvpn/server/
-    cp pki/issued/server.crt /etc/openvpn/server/
-    cp pki/private/server.key /etc/openvpn/server/
-    cp pki/dh.pem /etc/openvpn/server/
+    info "Adapting configuration for TCP on port 1194..."
+    if [ -f /etc/openvpn/server/server.conf ]; then
+        # Rename the UDP config to be specific
+        mv /etc/openvpn/server/server.conf /etc/openvpn/server/server_udp.conf
 
-    info "Creating OpenVPN server configurations in /etc/openvpn/server/..."
-    IP_ADDRESS=$(curl -s ifconfig.me)
+        # Create the TCP config based on the UDP one
+        cp /etc/openvpn/server/server_udp.conf /etc/openvpn/server/server_tcp.conf
+        sed -i 's/proto udp/proto tcp/' /etc/openvpn/server/server_tcp.conf
+        sed -i 's/port 2200/port 1194/' /etc/openvpn/server/server_tcp.conf
 
-    # Correct path for systemd service: /etc/openvpn/server/server_udp.conf
-    cat > /etc/openvpn/server/server_udp.conf << EOF
-port 2200
-proto udp
-dev tun
-ca /etc/openvpn/server/ca.crt
-cert /etc/openvpn/server/server.crt
-key /etc/openvpn/server/server.key
-dh /etc/openvpn/server/dh.pem
-server 10.8.0.0 255.255.255.0
-ifconfig-pool-persist /etc/openvpn/ipp.txt
-push "redirect-gateway def1 bypass-dhcp"
-push "dhcp-option DNS 8.8.8.8"
-push "dhcp-option DNS 8.8.4.4"
-keepalive 10 120
-cipher AES-256-CBC
-user nobody
-group nogroup
-persist-key
-persist-tun
-status /var/log/openvpn/openvpn-status.log
-verb 3
-explicit-exit-notify 1
-EOF
+        # Adjust server subnet to avoid conflict
+        sed -i 's/server 10.8.0.0/server 10.9.0.0/' /etc/openvpn/server/server_tcp.conf
 
-    # Correct path for systemd service: /etc/openvpn/server/server_tcp.conf
-    cat > /etc/openvpn/server/server_tcp.conf << EOF
-port 1194
-proto tcp
-dev tun
-ca /etc/openvpn/server/ca.crt
-cert /etc/openvpn/server/server.crt
-key /etc/openvpn/server/server.key
-dh /etc/openvpn/server/dh.pem
-server 10.9.0.0 255.255.255.0
-ifconfig-pool-persist /etc/openvpn/ipp_tcp.txt
-push "redirect-gateway def1 bypass-dhcp"
-push "dhcp-option DNS 8.8.8.8"
-push "dhcp-option DNS 8.8.4.4"
-keepalive 10 120
-cipher AES-256-CBC
-user nobody
-group nogroup
-persist-key
-persist-tun
-status /var/log/openvpn/openvpn-status-tcp.log
-verb 3
-explicit-exit-notify 1
-EOF
+        # Restart the main service with the specific UDP config
+        systemctl restart openvpn-server@server_udp.service
 
-    mkdir -p /var/log/openvpn
+        # Enable and start the new TCP service
+        systemctl enable openvpn-server@server_tcp.service
+        systemctl start openvpn-server@server_tcp.service
 
-    info "Enabling IP forwarding..."
-    sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-    sysctl -p >/dev/null 2>&1
-
-    info "Configuring Firewall for OpenVPN NAT..."
-    INTERFACE=$(ip -o -4 route show to default | awk '{print $5}')
-    UFW_BEFORE_RULES="/etc/ufw/before.rules"
-    if ! grep -q "POSTROUTING.*10.8.0.0" "$UFW_BEFORE_RULES"; then
-        sed -i "1s;^;*nat\n:POSTROUTING ACCEPT [0:0]\n-A POSTROUTING -s 10.8.0.0/24 -o $INTERFACE -j MASQUERADE\n-A POSTROUTING -s 10.9.0.0/24 -o $INTERFACE -j MASQUERADE\nCOMMIT\n;" "$UFW_BEFORE_RULES"
+        info "Verifying OpenVPN services..."
+        if ! systemctl is-active --quiet openvpn-server@server_udp.service; then
+            error "OpenVPN UDP service failed to start. Check logs with 'journalctl -u openvpn-server@server_udp.service'."
+        fi
+        if ! systemctl is-active --quiet openvpn-server@server_tcp.service; then
+            warn "OpenVPN TCP service failed to start. Check logs with 'journalctl -u openvpn-server@server_tcp.service'."
+        fi
+    else
+        error "OpenVPN base installation failed. Could not find server.conf."
     fi
 
-    info "Starting and enabling OpenVPN services..."
-    systemctl enable openvpn-server@server_udp.service >/dev/null 2>&1
-    systemctl start openvpn-server@server_udp.service
-    systemctl enable openvpn-server@server_tcp.service >/dev/null 2>&1
-    systemctl start openvpn-server@server_tcp.service
-
-    if ! systemctl is-active --quiet openvpn-server@server_udp.service; then
-        error "OpenVPN UDP service failed to start. Check logs with 'journalctl -u openvpn-server@server_udp.service'."
-    fi
-    if ! systemctl is-active --quiet openvpn-server@server_tcp.service; then
-        warn "OpenVPN TCP service failed to start. Check logs with 'journalctl -u openvpn-server@server_tcp.service'."
-    fi
-
+    # Create a generic client template for the menu script
     info "Creating client configuration template..."
+    IP_ADDRESS=$(curl -s ifconfig.me)
     cat > /etc/openvpn/client-template.ovpn << EOF
 client
 dev tun
@@ -294,9 +253,16 @@ nobind
 persist-key
 persist-tun
 remote-cert-tls server
-cipher AES-256-CBC
+cipher AES-256-GCM
+auth SHA256
 verb 3
 EOF
+
+    # The Nyr script handles user management, so we adapt our menu
+    # For simplicity in this fix, we will rely on the user management provided by Nyr's script
+    # by running `./openvpn-install.sh` again from the command line.
+    # We will adjust our menu script to simply call the Nyr script.
+    sed -i '/add_ssh_user/ a \    echo "Untuk manajemen user OpenVPN, jalankan /root/openvpn-install.sh"' /usr/local/bin/menu
 
     info "OpenVPN setup completed."
 }
