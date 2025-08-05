@@ -59,7 +59,7 @@ install_dependencies() {
         ufw fail2ban \
         unzip zip \
         python3 python3-pip \
-        dropbear stunnel4 squid haveged
+        dropbear stunnel4 squid haveged certbot
 
     # Install websocket proxy
     info "Installing Python WebSocket proxy..."
