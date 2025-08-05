@@ -59,7 +59,7 @@ install_dependencies() {
         ufw fail2ban \
         unzip zip \
         python3 python3-pip \
-        dropbear stunnel4 squid haveged certbot
+        dropbear stunnel4 squid haveged certbot acl
 
     # Install websocket proxy
     info "Installing Python WebSocket proxy..."
@@ -367,13 +367,22 @@ EOF
     info "Setting up user and permissions for XRAY service..."
     groupadd --system xray >/dev/null 2>&1 || true
     useradd --system -g xray -d /usr/local/etc/xray -s /bin/false xray >/dev/null 2>&1 || true
+
+    info "Changing ownership of XRAY directories..."
     chown -R xray:xray /usr/local/etc/xray
     chown -R xray:xray /var/log/xray
-    usermod -aG adm xray
+    if [ "$(stat -c '%U' /usr/local/etc/xray)" != "xray" ]; then
+        error "Failed to change ownership of /usr/local/etc/xray."
+    fi
 
-    # Modify XRAY service to run as 'xray' user
+    info "Setting up service user..."
     sed -i 's/User=nobody/User=xray/' /etc/systemd/system/xray.service
     sed -i 's/Group=nobody/Group=xray/' /etc/systemd/system/xray.service
+
+    info "Applying special permissions for SSL certs..."
+    setfacl -R -m u:xray:r-x /etc/letsencrypt/live/
+    setfacl -R -m u:xray:r-x /etc/letsencrypt/archive/
+
     systemctl daemon-reload
 
     # --- Restart XRAY ---
