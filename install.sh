@@ -214,20 +214,8 @@ setup_openvpn() {
         error "OpenVPN service 'openvpn-server@server.service' is not running. Please check the logs."
     fi
 
-    # --- Adapt Menu ---
-    # The Nyr script handles user management. We will adjust our menu to reflect this.
-    info "Adapting management menu for OpenVPN..."
-    sed -i '/add_ssh_user/d' /usr/local/bin/menu
-    sed -i '/delete_ssh_user/d' /usr/local/bin/menu
-    sed -i '/Add SSH\/OpenVPN User/d' /usr/local/bin/menu
-    sed -i '/Delete SSH\/OpenVPN User/d' /usr/local/bin/menu
-    # Add a new option to the menu to call the Nyr script
-    sed -i '/echo " 3. List XRAY Users"/a \    echo " 4. Manage OpenVPN Users (via installer script)"' /usr/local/bin/menu
-    # Add the case for the new option
-    sed -i '/list_xray_users/a \        4) \/root\/openvpn-install.sh; press_enter_to_continue ;;' /usr/local/bin/menu
-
     info "OpenVPN setup completed successfully."
-    info "To add/remove OpenVPN users, run 'menu' and select the OpenVPN option, or run '/root/openvpn-install.sh' directly."
+    info "To add/remove OpenVPN users, run '/root/openvpn-install.sh' directly."
 }
 
 setup_xray() {
@@ -554,6 +542,7 @@ NC='\033[0m'
 USER_DB="/etc/regarstore/users.db"
 XRAY_API_ADDR="127.0.0.1:10085"
 XRAY_BIN="/usr/local/bin/xray"
+OPENVPN_INSTALLER="/root/openvpn-install.sh"
 
 # --- Helper Functions ---
 function press_enter_to_continue() {
@@ -570,8 +559,8 @@ show_menu() {
     echo " 1. Add XRAY User (VLESS/VMess/Trojan)"
     echo " 2. Delete XRAY User"
     echo " 3. List XRAY Users"
-    echo " 4. Add SSH/OpenVPN User"
-    echo " 5. Delete SSH/OpenVPN User"
+    echo " 4. Manage OpenVPN Users (run installer)"
+    echo " 5. Manage SSH Users"
     echo " 6. Check Service Status"
     echo " 7. Renew SSL Certificate"
     echo " 8. Reboot Server"
@@ -593,22 +582,20 @@ add_xray_user() {
     local protocol_name inbound_tag creds_id creds_pass settings
 
     case $proto_choice in
-        1) protocol_name="vless"; inbound_tag="vless-in"; creds_id=$(xray uuid) ;;
-        2) protocol_name="vmess"; inbound_tag="vmess-in"; creds_id=$(xray uuid) ;;
+        1) protocol_name="vless"; inbound_tag="vless-in"; creds_id=$($XRAY_BIN uuid) ;;
+        2) protocol_name="vmess"; inbound_tag="vmess-in"; creds_id=$($XRAY_BIN uuid) ;;
         3) protocol_name="trojan"; inbound_tag="trojan-in"; creds_pass=$(openssl rand -base64 12) ;;
         *) echo -e "${RED}Invalid protocol choice.${NC}"; return ;;
     esac
 
-    # Construct settings JSON for API call
-    if [[ -n "$creds_pass" ]]; then # Trojan
+    if [[ -n "$creds_pass" ]]; then
         settings="{\"clients\": [{\"password\": \"$creds_pass\", \"email\": \"$email\", \"level\": 0}]}"
         creds_for_db=$creds_pass
-    else # VLESS/VMess
+    else
         settings="{\"clients\": [{\"id\": \"$creds_id\", \"email\": \"$email\", \"level\": 0}]}"
         creds_for_db=$creds_id
     fi
 
-    # Add user to XRAY service via API
     result=$($XRAY_BIN api inbound add --server=$XRAY_API_ADDR --tag=$inbound_tag --protocol=$protocol_name --settings="$settings")
 
     if [[ $? -eq 0 ]]; then
@@ -622,19 +609,13 @@ add_xray_user() {
 
 delete_xray_user() {
     read -p "Enter username (email) to delete: " email
-
     user_line=$(grep "^$email;" "$USER_DB")
     if [[ -z "$user_line" ]]; then
-        echo -e "${RED}User '$email' not found in database.${NC}"
-        return
+        echo -e "${RED}User '$email' not found in database.${NC}"; return
     fi
-
     protocol_name=$(echo "$user_line" | cut -d';' -f2)
     inbound_tag="${protocol_name}-in"
-
-    # Remove user from XRAY service via API
     result=$($XRAY_BIN api inbound remove --server=$XRAY_API_ADDR --tag="$inbound_tag" --email="$email")
-
     if [[ $? -eq 0 ]]; then
         sed -i "/^$email;/d" "$USER_DB"
         echo -e "${GREEN}User '$email' removed from $protocol_name.${NC}"
@@ -645,7 +626,7 @@ delete_xray_user() {
 
 list_xray_users() {
     echo "--- XRAY User List ---"
-    printf "%-25s | %-8s | %-10s | %-10s | %-12s\n" "Email" "Protocol" "Quota (GB)" "IP Limit" "Expires"
+    printf "%-25s | %-8s | %-10s | %-10s | %-12s\n" "Email" "Protocol" "Quota(GB)" "IP Limit" "Expires"
     echo "-----------------------------------------------------------------------------"
     while IFS=';' read -r email protocol creds quota_gb ip_limit exp_date; do
         [[ "$email" == \#* ]] && continue
@@ -654,54 +635,40 @@ list_xray_users() {
     echo "-----------------------------------------------------------------------------"
 }
 
-# --- SSH/OpenVPN User Management (Legacy) ---
-add_ssh_user() {
-    # This function remains largely the same as before
-    read -p "Enter username: " username
-    read -p "Enter password: " password
-    read -p "Enter expiration days (e.g., 30): " days
-
-    expiry_date=$(date -d "+$days days" +"%Y-%m-%d")
-    useradd -m -s /bin/bash -e "$expiry_date" "$username"
-    echo "$username:$password" | chpasswd
-
-    echo -e "${GREEN}SSH User '$username' added. Expires: $expiry_date${NC}"
-
-    # Create OpenVPN client config
-    cd /etc/openvpn/easy-rsa
-    ./easyrsa build-client-full "$username" nopass >/dev/null 2>&1
-
-    cat /etc/openvpn/client-template.ovpn > "/root/${username}.ovpn"
-    echo "<ca>" >> "/root/${username}.ovpn"; cat /etc/openvpn/easy-rsa/pki/ca.crt >> "/root/${username}.ovpn"; echo "</ca>" >> "/root/${username}.ovpn"
-    echo "<cert>" >> "/root/${username}.ovpn"; cat /etc/openvpn/easy-rsa/pki/issued/${username}.crt >> "/root/${username}.ovpn"; echo "</cert>" >> "/root/${username}.ovpn"
-    echo "<key>" >> "/root/${username}.ovpn"; cat /etc/openvpn/easy-rsa/pki/private/${username}.key >> "/root/${username}.ovpn"; echo "</key>" >> "/root/${username}.ovpn"
-    echo -e "${YELLOW}OpenVPN config for '$username' created at /root/${username}.ovpn${NC}"
-}
-
-delete_ssh_user() {
-    # This function remains largely the same
-    read -p "Enter username to delete: " username
-    if id "$username" &>/dev/null; then
-        userdel -r "$username"
-        cd /etc/openvpn/easy-rsa
-        ./easyrsa revoke "$username" >/dev/null 2>&1
-        ./easyrsa gen-crl >/dev/null 2>&1
-        cp /etc/openvpn/easy-rsa/pki/crl.pem /etc/openvpn/crl.pem
-        echo -e "${GREEN}User '$username' deleted.${NC}"
-    else
-        echo -e "${RED}User '$username' does not exist.${NC}"
-    fi
+# --- Other User Management ---
+manage_ssh_users() {
+    echo "Simple SSH User Management"
+    read -p "Action [1=Add, 2=Delete]: " action
+    case $action in
+        1) read -p "Enter username: " username
+           read -p "Enter password: " password
+           read -p "Enter expiration days (e.g., 30): " days
+           expiry_date=$(date -d "+$days days" +"%Y-%m-%d")
+           useradd -m -s /bin/bash -e "$expiry_date" "$username"
+           echo "$username:$password" | chpasswd
+           echo -e "${GREEN}SSH User '$username' added. Expires: $expiry_date${NC}"
+           ;;
+        2) read -p "Enter username to delete: " username
+           if id "$username" &>/dev/null; then
+               userdel -r "$username"
+               echo -e "${GREEN}User '$username' deleted.${NC}"
+           else
+               echo -e "${RED}User '$username' does not exist.${NC}"
+           fi
+           ;;
+        *) echo "Invalid action." ;;
+    esac
 }
 
 # --- System Functions ---
 check_services() {
     echo "--- Service Status ---"
-    SERVICES=("sshd" "dropbear" "stunnel4" "xray" "squid" "badvpn@7100" "openvpn-server@server_tcp" "openvpn-server@server_udp")
+    SERVICES=("sshd" "dropbear" "stunnel4" "xray" "squid" "badvpn@7100" "openvpn-server@server")
     for service in "${SERVICES[@]}"; do
         if systemctl is-active --quiet "$service"; then
-            echo -e "$service: ${GREEN}Running${NC}"
+            echo -e "$service: ${GREEN}Running\033[0m"
         else
-            echo -e "$service: ${RED}Stopped${NC}"
+            echo -e "$service: ${RED}Stopped\033[0m"
         fi
     done
     echo "----------------------"
@@ -725,8 +692,8 @@ while true; do
         1) add_xray_user; press_enter_to_continue ;;
         2) delete_xray_user; press_enter_to_continue ;;
         3) list_xray_users; press_enter_to_continue ;;
-        4) add_ssh_user; press_enter_to_continue ;;
-        5) delete_ssh_user; press_enter_to_continue ;;
+        4) $OPENVPN_INSTALLER; press_enter_to_continue ;;
+        5) manage_ssh_users; press_enter_to_continue ;;
         6) check_services; press_enter_to_continue ;;
         7) renew_ssl; press_enter_to_continue ;;
         8) reboot ;;
@@ -903,12 +870,12 @@ main() {
     ask_domain
 
     install_dependencies
-    setup_management_menu
     setup_ssh_tunneling
     setup_openvpn
     setup_xray
     setup_support_services
     setup_security
+    setup_management_menu
 
     finalize_installation
 
