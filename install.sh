@@ -59,7 +59,7 @@ install_dependencies() {
         ufw fail2ban \
         unzip zip \
         python3 python3-pip \
-        dropbear stunnel4 squid
+        dropbear stunnel4 squid haveged
 
     # Install websocket proxy
     info "Installing Python WebSocket proxy..."
@@ -197,16 +197,16 @@ setup_openvpn() {
 
     # --- Initialize PKI and Build CA ---
     info "Initializing PKI and building Certificate Authority..."
-    ./easyrsa init-pki >/dev/null 2>&1
-    echo "RegarStoreVPN" | ./easyrsa build-ca nopass >/dev/null 2>&1
+    ./easyrsa --batch init-pki >/dev/null 2>&1
+    ./easyrsa --batch build-ca nopass >/dev/null 2>&1
 
     # --- Generate Server Cert and Key ---
     info "Generating OpenVPN server certificate and key..."
-    ./easyrsa build-server-full server nopass >/dev/null 2>&1
+    ./easyrsa --batch build-server-full server nopass >/dev/null 2>&1
 
     # --- Generate Diffie-Hellman parameters ---
     info "Generating Diffie-Hellman parameters..."
-    ./easyrsa gen-dh >/dev/null 2>&1
+    ./easyrsa --batch gen-dh >/dev/null 2>&1
 
     # --- Create OpenVPN Server Configs (UDP & TCP) ---
     info "Creating OpenVPN server configurations for UDP (2200) and TCP (1194)..."
