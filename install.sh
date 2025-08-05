@@ -182,40 +182,42 @@ EOF
 }
 
 setup_openvpn() {
-    info "Setting up OpenVPN server using a robust, industry-standard installer..."
+    info "Setting up OpenVPN server using an interactive, standard installer..."
 
-    # Download the well-tested openvpn-install.sh script directly to /root
-    # so the user can easily run it again to manage users.
-    curl -o /root/openvpn-install.sh https://raw.githubusercontent.com/Nyr/openvpn-install/master/openvpn-install.sh
-    chmod +x /root/openvpn-install.sh
+    # Download the well-tested openvpn-install.sh script if it doesn't exist.
+    if [ ! -f /root/openvpn-install.sh ]; then
+        info "Downloading standard OpenVPN installer..."
+        curl -o /root/openvpn-install.sh https://raw.githubusercontent.com/Nyr/openvpn-install/master/openvpn-install.sh
+        chmod +x /root/openvpn-install.sh
+    fi
 
-    # --- Run the installer script, showing all output to the user ---
-    info "Running the OpenVPN installer. If it fails, the error will be shown below."
-    warn "This installer will create one OpenVPN instance (UDP on Port 2200)."
+    # --- Run the installer INTERACTIVELY ---
+    info "The standard OpenVPN installer will now run."
+    warn "Please answer the questions it asks. If you see any errors, please note them."
+    warn "It is recommended to use UDP on port 2200 for the first run."
 
-    # Run the script non-interactively. Crucially, we do NOT redirect stdout/stderr.
-    AUTO_INSTALL=y \
-    APPROVE_INSTALL=y \
-    APPROVE_IP=y \
-    PORT_CHOICE=2 \
-    PORT=2200 \
-    PROTOCOL_CHOICE=1 \
-    DNS=1 \
-    CLIENT=initial-client \
-    PASS=1 \
+    # Run the script interactively, allowing the user to see everything.
     /root/openvpn-install.sh
+
+    # --- Ask for user confirmation ---
+    echo ""
+    read -p "Did the OpenVPN installation above complete WITHOUT any fatal errors? [y/n]: " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        error "OpenVPN setup aborted by user. Please re-run the main script when ready."
+    fi
 
     # --- Verification ---
     info "Verifying OpenVPN installation..."
     if [ ! -f /etc/openvpn/server/server.conf ]; then
-        error "OpenVPN installation FAILED. The installer script did not create /etc/openvpn/server/server.conf. Please review the output above for the specific error."
+        error "OpenVPN installation verification FAILED. The file /etc/openvpn/server/server.conf was not found. The installation likely failed."
     fi
     if ! systemctl is-active --quiet openvpn-server@server.service; then
         error "OpenVPN service 'openvpn-server@server.service' is not running. Please check the logs."
     fi
 
     info "OpenVPN setup completed successfully."
-    info "To add/remove OpenVPN users, run '/root/openvpn-install.sh' directly."
+    info "To add/remove more OpenVPN users, run '/root/openvpn-install.sh' again."
 }
 
 setup_xray() {
