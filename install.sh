@@ -106,8 +106,8 @@ setup_ssh_tunneling() {
     info "Configuring Dropbear on ports 109 & 143..."
     cat > /etc/default/dropbear << EOF
 NO_START=0
-DROPBEAR_PORT=22
-DROPBEAR_EXTRA_ARGS="-p 109 -p 143"
+DROPBEAR_PORT=109
+DROPBEAR_EXTRA_ARGS="-p 143"
 DROPBEAR_BANNER="/etc/ssh/banner"
 DROPBEAR_RECEIVE_WINDOW=65536
 EOF
