@@ -184,12 +184,8 @@ EOF
 setup_openvpn() {
     info "Setting up OpenVPN server..."
 
-    if ! command -v openvpn &> /dev/null; then
-        apt-get install -y openvpn >/dev/null 2>&1
-    fi
-    if ! command -v easyrsa &> /dev/null; then
-        apt-get install -y easy-rsa >/dev/null 2>&1
-    fi
+    if ! command -v openvpn &> /dev/null; then apt-get install -y openvpn >/dev/null 2>&1; fi
+    if ! command -v easyrsa &> /dev/null; then apt-get install -y easy-rsa >/dev/null 2>&1; fi
 
     info "Configuring Easy-RSA and generating certificates..."
     mkdir -p /etc/openvpn/easy-rsa
@@ -201,17 +197,18 @@ setup_openvpn() {
     ./easyrsa --batch build-server-full server nopass >/dev/null 2>&1
     ./easyrsa --batch gen-dh >/dev/null 2>&1
 
-    info "Copying OpenVPN server files..."
+    info "Copying OpenVPN server files to /etc/openvpn/server..."
     mkdir -p /etc/openvpn/server
     cp pki/ca.crt /etc/openvpn/server/
     cp pki/issued/server.crt /etc/openvpn/server/
     cp pki/private/server.key /etc/openvpn/server/
     cp pki/dh.pem /etc/openvpn/server/
 
-    info "Creating OpenVPN server configurations..."
+    info "Creating OpenVPN server configurations in /etc/openvpn/server/..."
     IP_ADDRESS=$(curl -s ifconfig.me)
 
-    cat > /etc/openvpn/server_udp.conf << EOF
+    # Correct path for systemd service: /etc/openvpn/server/server_udp.conf
+    cat > /etc/openvpn/server/server_udp.conf << EOF
 port 2200
 proto udp
 dev tun
@@ -220,7 +217,7 @@ cert /etc/openvpn/server/server.crt
 key /etc/openvpn/server/server.key
 dh /etc/openvpn/server/dh.pem
 server 10.8.0.0 255.255.255.0
-ifconfig-pool-persist ipp.txt
+ifconfig-pool-persist /etc/openvpn/ipp.txt
 push "redirect-gateway def1 bypass-dhcp"
 push "dhcp-option DNS 8.8.8.8"
 push "dhcp-option DNS 8.8.4.4"
@@ -235,7 +232,8 @@ verb 3
 explicit-exit-notify 1
 EOF
 
-    cat > /etc/openvpn/server_tcp.conf << EOF
+    # Correct path for systemd service: /etc/openvpn/server/server_tcp.conf
+    cat > /etc/openvpn/server/server_tcp.conf << EOF
 port 1194
 proto tcp
 dev tun
@@ -244,7 +242,7 @@ cert /etc/openvpn/server/server.crt
 key /etc/openvpn/server/server.key
 dh /etc/openvpn/server/dh.pem
 server 10.9.0.0 255.255.255.0
-ifconfig-pool-persist ipp_tcp.txt
+ifconfig-pool-persist /etc/openvpn/ipp_tcp.txt
 push "redirect-gateway def1 bypass-dhcp"
 push "dhcp-option DNS 8.8.8.8"
 push "dhcp-option DNS 8.8.4.4"
